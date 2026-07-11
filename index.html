@@ -84,11 +84,15 @@
   </main>
 
   <script type="module">
-    import { initTheme, initOfflineBanner, hideSplash, attachRipples } from "./script.js";
+    import { initTheme, initOfflineBanner, hideSplash, attachRipples, redirectIfLoggedIn } from "./script.js";
 
     initTheme();
     initOfflineBanner();
     attachRipples();
+
+    // If they're already signed in (e.g. "stay logged in" from a previous
+    // visit), skip the landing page and go straight to the dashboard.
+    redirectIfLoggedIn("dashboard.html");
 
     // Hide splash once everything's painted
     window.addEventListener("load", () => {
