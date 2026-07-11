@@ -153,7 +153,10 @@
         showToast("Bio updated!", "success");
       } catch (err) {
         console.error(err);
-        showToast("Couldn't save your bio. Try again.", "error");
+        const reason = err.code === "permission-denied"
+          ? "Permission denied — check your Firestore rules are published."
+          : (err.message || "Couldn't save your bio. Try again.");
+        showToast(reason, "error");
       } finally {
         setButtonLoading(btn, false, "Save changes");
       }
@@ -182,7 +185,10 @@
       try {
         const compressed = await compressImage(file, 512, 0.8);
         const storageRef = ref(storage, `profilePhotos/${user.uid}.jpg`);
-        const task = uploadBytesResumable(storageRef, compressed);
+        // Explicit contentType metadata — without this, some browsers upload
+        // the compressed blob with a generic type, which the Storage rule's
+        // `contentType.matches('image/.*')` check then rejects as permission-denied.
+        const task = uploadBytesResumable(storageRef, compressed, { contentType: "image/jpeg" });
 
         task.on("state_changed", (snapshot) => {
           const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
@@ -190,7 +196,10 @@
           progressText.textContent = `Uploading… ${pct}%`;
         }, (err) => {
           console.error(err);
-          showToast("Upload failed. Try again.", "error");
+          const reason = err.code === "storage/unauthorized"
+            ? "Permission denied — check your Storage rules are published."
+            : (err.message || "Upload failed. Try again.");
+          showToast(reason, "error");
           progressWrap.style.display = "none";
         }, async () => {
           const url = await getDownloadURL(storageRef);
