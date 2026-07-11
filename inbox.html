@@ -260,16 +260,18 @@
       if (hint.browser) parts.push(hint.browser);
       if (hint.region) parts.push(`near ${escapeHtml(hint.region)}`);
       if (parts.length === 0) return "";
-      return `<p class="chip" style="margin-top: var(--space-2); width: fit-content;">${parts.join(" · ")}</p>`;
+      return `<p class="chip" style="margin-top: var(--space-2); width: fit-content;"><strong style="color: var(--accent-strong);">Hint:</strong>&nbsp;${parts.join(" · ")}</p>`;
     }
 
     function wireCardActions() {
       document.querySelectorAll(".letter-card[data-id]").forEach((card) => {
         const id = card.dataset.id;
-        const msg = loadedMessages.find((m) => m.id === id);
-        if (msg && !msg.read) {
-          card.addEventListener("click", () => markRead(id, card), { once: true });
-        }
+        card.style.cursor = "pointer";
+        card.addEventListener("click", () => {
+          const msg = loadedMessages.find((m) => m.id === id);
+          if (msg && !msg.read) markRead(id, card);
+          card.classList.toggle("expanded");
+        });
       });
 
       document.querySelectorAll(".pin-btn").forEach((btn) => {
