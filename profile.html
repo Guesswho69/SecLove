@@ -172,48 +172,90 @@
       const user = auth.currentUser;
       if (!user) return;
 
-      if (!file.type.startsWith("image/")) {
+      if (!file.type.startsWith("image/") && !/\.(heic|heif)$/i.test(file.name)) {
         showToast("Please choose an image file.", "error");
         return;
       }
+
+      // HEIC/HEIF (the default format on many iPhones) can't be decoded by
+      // an <img> tag in most browsers — that silently hangs the compression
+      // step forever, which is what "stuck at 0%" actually was. Catch it
+      // early with a clear message instead of letting it hang.
+      const isHeic = file.type === "image/heic" || file.type === "image/heif" || /\.(heic|heif)$/i.test(file.name);
+      if (isHeic) {
+        showToast("That photo format (HEIC) isn't supported. Please choose a JPG or PNG — on iPhone, try 'Copy Photo' then pasting, or changing your camera format to 'Most Compatible' in Settings.", "error");
+        avatarInput.value = "";
+        return;
+      }
+
+      // Instant local preview so something shows up right away, independent
+      // of whether the upload itself succeeds.
+      const previewImg = document.getElementById("avatar-preview");
+      const objectUrl = URL.createObjectURL(file);
+      previewImg.src = objectUrl;
 
       const progressWrap = document.getElementById("upload-progress-wrap");
       const progressBar = document.getElementById("upload-progress-bar");
       const progressText = document.getElementById("upload-progress-text");
       progressWrap.style.display = "block";
+      progressBar.style.width = "0%";
+      progressText.textContent = "Preparing image…";
 
       try {
-        const compressed = await compressImage(file, 512, 0.8);
+        // Race the compression against a timeout so an unreadable file
+        // fails clearly instead of leaving the progress bar stuck at 0%.
+        const compressed = await withTimeout(
+          compressImage(file, 512, 0.8),
+          15000,
+          "Couldn't read that image — try a different photo."
+        );
+
+        progressText.textContent = "Uploading… 0%";
         const storageRef = ref(storage, `profilePhotos/${user.uid}.jpg`);
-        // Explicit contentType metadata — without this, some browsers upload
-        // the compressed blob with a generic type, which the Storage rule's
-        // `contentType.matches('image/.*')` check then rejects as permission-denied.
         const task = uploadBytesResumable(storageRef, compressed, { contentType: "image/jpeg" });
 
+        const uploadTimeout = setTimeout(() => {
+          task.cancel();
+        }, 30000);
+
         task.on("state_changed", (snapshot) => {
-          const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+          const pct = snapshot.totalBytes ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100) : 0;
           progressBar.style.width = `${pct}%`;
           progressText.textContent = `Uploading… ${pct}%`;
         }, (err) => {
+          clearTimeout(uploadTimeout);
           console.error(err);
-          const reason = err.code === "storage/unauthorized"
-            ? "Permission denied — check your Storage rules are published."
-            : (err.message || "Upload failed. Try again.");
+          let reason = err.message || "Upload failed. Try again.";
+          if (err.code === "storage/unauthorized") reason = "Permission denied — check your Storage rules are published.";
+          if (err.code === "storage/canceled") reason = "Upload timed out. Check your connection and try again.";
           showToast(reason, "error");
           progressWrap.style.display = "none";
+          URL.revokeObjectURL(objectUrl);
         }, async () => {
+          clearTimeout(uploadTimeout);
           const url = await getDownloadURL(storageRef);
           await updateDoc(doc(db, "publicProfiles", user.uid), { profilePhoto: url });
-          document.getElementById("avatar-preview").src = url;
+          previewImg.src = url;
+          URL.revokeObjectURL(objectUrl);
           progressWrap.style.display = "none";
           showToast("Profile photo updated!", "success");
         });
       } catch (err) {
         console.error(err);
-        showToast("Couldn't process that image.", "error");
+        showToast(err.message || "Couldn't process that image.", "error");
         progressWrap.style.display = "none";
+        URL.revokeObjectURL(objectUrl);
       }
     });
+
+    // Wraps a promise so it rejects with a friendly message instead of
+    // hanging forever if it never settles (e.g. an undecodable image).
+    function withTimeout(promise, ms, message) {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms))
+      ]);
+    }
 
     function fallbackAvatar(username) {
       const initial = (username || "?").charAt(0).toUpperCase();
