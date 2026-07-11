@@ -195,6 +195,12 @@ p { color: var(--text-muted); line-height: 1.6; font-size: var(--fs-base); }
   box-shadow: var(--shadow-lift);
 }
 
+.letter-card.expanded {
+  border-color: var(--accent-strong);
+  box-shadow: var(--shadow-lift);
+  transform: scale(1.01);
+}
+
 .letter-card .seal {
   position: absolute;
   top: var(--space-3);
