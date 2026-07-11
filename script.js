@@ -29,6 +29,100 @@ export function requireAuth(onReady) {
 }
 
 // ---------------------------------------------------------
+// Auto-login redirect
+// ---------------------------------------------------------
+/**
+ * For public-facing pages (index/login/signup): if the visitor already
+ * has an active session — e.g. they searched the site again, or
+ * bookmarked it, and chose "stay logged in" at their last login —
+ * send them straight to the dashboard instead of showing the
+ * landing/login form again. Call this once at the top of the page;
+ * it resolves quietly and does nothing if no one is signed in.
+ * @param {string} destination
+ */
+export function redirectIfLoggedIn(destination = "dashboard.html") {
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      window.location.href = destination;
+    } else {
+      hideSplash();
+    }
+  });
+}
+
+// ---------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------
+/**
+ * Asks the browser for permission to show system notifications.
+ * Safe to call repeatedly — browsers only prompt once per origin.
+ * NOTE: this only enables notifications while a tab for this site
+ * is open (foreground or backgrounded). Waking the phone when the
+ * site/app is fully closed requires push notifications (Firebase
+ * Cloud Messaging + a service worker + a server-side trigger), which
+ * is outside what a pure static-site, no-backend build can do.
+ */
+export async function requestNotificationPermission() {
+  if (!("Notification" in window)) return "unsupported";
+  if (Notification.permission === "granted" || Notification.permission === "denied") {
+    return Notification.permission;
+  }
+  try {
+    return await Notification.requestPermission();
+  } catch {
+    return "denied";
+  }
+}
+
+/**
+ * Shows a system notification if permission has been granted,
+ * falling back silently otherwise (the in-app toast still covers that case).
+ */
+export function showSystemNotification(title, body) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    new Notification(title, { body, icon: undefined, tag: "secret-letter-message" });
+  } catch (err) {
+    console.error("Notification failed:", err);
+  }
+}
+
+// ---------------------------------------------------------
+// Anonymous sender hint
+// ---------------------------------------------------------
+/**
+ * Builds a small, non-identifying "hint" about a message sender —
+ * device type, browser family, and a coarse region derived from their
+ * timezone. This deliberately stops well short of anything that could
+ * identify a specific person: no IP address, no precise location, no
+ * fingerprinting. It's the same category of detail sites already infer
+ * from a plain page request, just surfaced to the recipient as flavor.
+ * @returns {{device: string, browser: string, region: string}}
+ */
+export function buildSenderHint() {
+  const ua = navigator.userAgent || "";
+  const device = /Mobi|Android|iPhone|iPad/i.test(ua) ? "Mobile" : "Desktop";
+
+  let browser = "a browser";
+  if (ua.includes("Edg/")) browser = "Edge";
+  else if (ua.includes("Chrome/") && !ua.includes("OPR")) browser = "Chrome";
+  else if (ua.includes("Firefox/")) browser = "Firefox";
+  else if (ua.includes("Safari/") && !ua.includes("Chrome")) browser = "Safari";
+
+  let region = "somewhere";
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    // "America/New_York" -> "New York"; "Europe/London" -> "London"
+    const parts = tz.split("/");
+    if (parts.length > 1) region = parts[parts.length - 1].replace(/_/g, " ");
+  } catch {
+    // Intl not available — leave as "somewhere"
+  }
+
+  return { device, browser, region };
+}
+
+// ---------------------------------------------------------
 // Theme
 // ---------------------------------------------------------
 /**
@@ -271,3 +365,4 @@ export function compressImage(file, maxDimension = 512, quality = 0.8) {
     img.src = url;
   });
 }
+
