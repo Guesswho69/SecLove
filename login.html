@@ -88,12 +88,14 @@
       attachRipples,
       showToast,
       setButtonLoading,
-      isValidEmail
+      isValidEmail,
+      redirectIfLoggedIn
     } from "./script.js";
 
     initTheme();
     initOfflineBanner();
     attachRipples();
+    redirectIfLoggedIn("dashboard.html");
     window.addEventListener("load", () => setTimeout(hideSplash, 300));
 
     document.getElementById("theme-toggle").addEventListener("click", () => {
