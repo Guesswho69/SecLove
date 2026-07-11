@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Your profile — Secret Letter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div id="splash"><div class="splash-seal"></div></div>
+  <div id="offline-banner" class="offline-banner">You're offline — some things may not work.</div>
+  <div id="toast-container"></div>
+
+  <nav class="navbar row-between">
+    <div class="logo"><span>Secret</span><span class="dot">Letter</span></div>
+    <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">🌙</button>
+  </nav>
+
+  <main class="container page-enter has-tabbar">
+
+    <div class="stack" style="padding: var(--space-4) 0 var(--space-3);">
+      <span class="eyebrow">Your profile</span>
+      <h1>How the world<br /><span class="gradient-text">sees your box</span></h1>
+    </div>
+
+    <!-- Avatar upload -->
+    <section class="glass glass-card text-center" style="margin-bottom: var(--space-4);">
+      <div style="position: relative; width: 96px; margin: 0 auto;">
+        <img id="avatar-preview" class="avatar avatar-lg" src="" alt="Your profile photo" style="margin: 0 auto;" />
+        <button id="avatar-edit-btn" class="center" style="position: absolute; bottom: -4px; right: -4px; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff; box-shadow: var(--shadow-soft);" aria-label="Change photo">✎</button>
+        <input type="file" id="avatar-input" accept="image/*" style="display: none;" />
+      </div>
+      <div id="upload-progress-wrap" style="display: none; margin-top: var(--space-3);">
+        <div class="skeleton" style="height: 6px; border-radius: 999px; overflow: hidden;">
+          <div id="upload-progress-bar" style="height: 100%; width: 0%; background: linear-gradient(135deg, var(--accent), var(--accent-strong)); transition: width 150ms linear;"></div>
+        </div>
+        <p style="font-size: var(--fs-xs); margin-top: 4px;" id="upload-progress-text">Uploading… 0%</p>
+      </div>
+      <h3 id="username-display" style="margin-top: var(--space-3);">@—</h3>
+      <p style="font-size: var(--fs-xs);">Want a different username? Change it in <a href="settings.html" style="color: var(--accent-strong);">Settings</a>.</p>
+    </section>
+
+    <!-- Bio -->
+    <section class="glass glass-card stack" style="margin-bottom: var(--space-4);">
+      <div class="field">
+        <label for="bio">Bio</label>
+        <textarea class="input" id="bio" rows="3" maxlength="140" placeholder="Tell people what to write about…"></textarea>
+        <div class="row-between">
+          <span class="field-error" id="bio-error"></span>
+          <span class="char-counter" id="bio-counter">0/140</span>
+        </div>
+      </div>
+      <button id="save-bio-btn" class="btn btn-primary btn-block" data-ripple>Save changes</button>
+    </section>
+
+    <!-- Stats + link -->
+    <section class="row" style="margin-bottom: var(--space-4); gap: var(--space-3);">
+      <div class="glass glass-card text-center" style="flex: 1;">
+        <h2 id="stat-messages" class="gradient-text">—</h2>
+        <p style="font-size: var(--fs-xs);">Letters received</p>
+      </div>
+    </section>
+
+    <section class="letter-card">
+      <span class="seal"></span>
+      <p class="eyebrow" style="margin-bottom: var(--space-2);">Public preview</p>
+      <p style="font-size: var(--fs-sm);">This is what visitors see before they write to you.</p>
+      <div class="row" style="margin-top: var(--space-3);">
+        <button id="copy-link-btn" class="btn btn-secondary" style="flex: 1;" data-ripple>📋 Copy link</button>
+        <a id="preview-link" href="#" target="_blank" class="btn btn-primary" style="flex: 1;" data-ripple>👁 Preview</a>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="tab-bar">
+    <a href="dashboard.html" class="tab-item">🏠<span>Home</span></a>
+    <a href="inbox.html" class="tab-item">📬<span>Inbox</span></a>
+    <a href="profile.html" class="tab-item active">🪞<span>Profile</span></a>
+    <a href="settings.html" class="tab-item">⚙️<span>Settings</span></a>
+  </nav>
+
+  <script type="module">
+    import { auth, db, storage } from "./firebase.js";
+    import { doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+    import { ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
+    import {
+      requireAuth,
+      initTheme,
+      initOfflineBanner,
+      hideSplash,
+      attachRipples,
+      showToast,
+      setButtonLoading,
+      compressImage
+    } from "./script.js";
+
+    initTheme();
+    initOfflineBanner();
+    attachRipples();
+
+    let usernameLower = "";
+
+    requireAuth(async (user) => {
+      try {
+        const snap = await getDoc(doc(db, "publicProfiles", user.uid));
+        if (!snap.exists()) {
+          showToast("Couldn't load your profile.", "error");
+          return;
+        }
+        const data = snap.data();
+        usernameLower = data.usernameLower;
+
+        document.getElementById("avatar-preview").src = data.profilePhoto || fallbackAvatar(data.username);
+        document.getElementById("username-display").textContent = `@${data.username}`;
+        document.getElementById("bio").value = data.bio || "";
+        document.getElementById("bio-counter").textContent = `${(data.bio || "").length}/140`;
+        document.getElementById("stat-messages").textContent = data.messageCount ?? 0;
+
+        const link = `${window.location.origin}${window.location.pathname.replace("profile.html", "")}send.html?user=${usernameLower}`;
+        document.getElementById("preview-link").href = link;
+        document.getElementById("copy-link-btn").addEventListener("click", async () => {
+          await navigator.clipboard.writeText(link);
+          showToast("Link copied!", "success");
+        });
+      } catch (err) {
+        console.error(err);
+        showToast("Something went wrong loading your profile.", "error");
+      } finally {
+        hideSplash();
+      }
+    });
+
+    // Bio char counter + save
+    const bioInput = document.getElementById("bio");
+    const bioCounter = document.getElementById("bio-counter");
+    bioInput.addEventListener("input", () => {
+      bioCounter.textContent = `${bioInput.value.length}/140`;
+      bioCounter.classList.toggle("limit", bioInput.value.length >= 140);
+    });
+
+    document.getElementById("save-bio-btn").addEventListener("click", async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+      const btn = document.getElementById("save-bio-btn");
+      setButtonLoading(btn, true, "Saving…");
+      try {
+        await updateDoc(doc(db, "publicProfiles", user.uid), { bio: bioInput.value.trim() });
+        showToast("Bio updated!", "success");
+      } catch (err) {
+        console.error(err);
+        showToast("Couldn't save your bio. Try again.", "error");
+      } finally {
+        setButtonLoading(btn, false, "Save changes");
+      }
+    });
+
+    // Avatar upload with compression + progress
+    const avatarInput = document.getElementById("avatar-input");
+    document.getElementById("avatar-edit-btn").addEventListener("click", () => avatarInput.click());
+
+    avatarInput.addEventListener("change", async () => {
+      const file = avatarInput.files[0];
+      if (!file) return;
+      const user = auth.currentUser;
+      if (!user) return;
+
+      if (!file.type.startsWith("image/")) {
+        showToast("Please choose an image file.", "error");
+        return;
+      }
+
+      const progressWrap = document.getElementById("upload-progress-wrap");
+      const progressBar = document.getElementById("upload-progress-bar");
+      const progressText = document.getElementById("upload-progress-text");
+      progressWrap.style.display = "block";
+
+      try {
+        const compressed = await compressImage(file, 512, 0.8);
+        const storageRef = ref(storage, `profilePhotos/${user.uid}.jpg`);
+        const task = uploadBytesResumable(storageRef, compressed);
+
+        task.on("state_changed", (snapshot) => {
+          const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+          progressBar.style.width = `${pct}%`;
+          progressText.textContent = `Uploading… ${pct}%`;
+        }, (err) => {
+          console.error(err);
+          showToast("Upload failed. Try again.", "error");
+          progressWrap.style.display = "none";
+        }, async () => {
+          const url = await getDownloadURL(storageRef);
+          await updateDoc(doc(db, "publicProfiles", user.uid), { profilePhoto: url });
+          document.getElementById("avatar-preview").src = url;
+          progressWrap.style.display = "none";
+          showToast("Profile photo updated!", "success");
+        });
+      } catch (err) {
+        console.error(err);
+        showToast("Couldn't process that image.", "error");
+        progressWrap.style.display = "none";
+      }
+    });
+
+    function fallbackAvatar(username) {
+      const initial = (username || "?").charAt(0).toUpperCase();
+      return `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='50' fill='%236C4FF0'/><text x='50' y='62' font-size='42' text-anchor='middle' fill='white' font-family='sans-serif'>${initial}</text></svg>`;
+    }
+
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+      const html = document.documentElement;
+      const next = html.getAttribute("data-theme") === "light" ? "dark" : "light";
+      html.setAttribute("data-theme", next);
+      localStorage.setItem("sl-theme", next);
+    });
+  </script>
+</body>
+</html>

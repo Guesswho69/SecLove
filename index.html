@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Secret Letter — Anonymous letters, sealed and sent</title>
+<meta name="description" content="Send and receive anonymous letters. Share your link, get honest messages, keep your identity yours." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2245%22 fill=%22%236C4FF0%22/></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Splash screen -->
+  <div id="splash">
+    <div class="splash-seal"></div>
+    <p class="eyebrow" style="color: var(--text-muted);">Secret Letter</p>
+  </div>
+
+  <div id="offline-banner" class="offline-banner">You're offline — some things may not work.</div>
+
+  <!-- Toast host -->
+  <div id="toast-container"></div>
+
+  <nav class="navbar row-between">
+    <div class="logo"><span>Secret</span><span class="dot">Letter</span></div>
+    <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">🌙</button>
+  </nav>
+
+  <main class="container page-enter">
+
+    <!-- Hero -->
+    <section class="stack" style="padding: var(--space-6) 0 var(--space-5);">
+      <span class="eyebrow">Anonymous, always</span>
+      <h1>Some things are<br /><span class="gradient-text">easier to say</span><br />unsigned.</h1>
+      <p>Share your link. Anyone can send you a letter — no account, no name attached. You read it, they stay unknown.</p>
+      <div class="row" style="margin-top: var(--space-3); flex-wrap: wrap;">
+        <a href="signup.html" class="btn btn-primary" data-ripple>Create your inbox</a>
+        <a href="login.html" class="btn btn-secondary" data-ripple>Log in</a>
+      </div>
+    </section>
+
+    <!-- Signature letter card demo -->
+    <section class="letter-card card-float" style="margin-bottom: var(--space-5);">
+      <span class="seal"></span>
+      <p class="eyebrow" style="margin-bottom: var(--space-1);">Unsigned letter</p>
+      <h3 style="font-family: var(--font-body); font-weight: 600;">"I've admired how you handled that project. You don't give yourself enough credit."</h3>
+      <p style="margin-top: var(--space-2); font-size: var(--fs-xs);">Delivered just now</p>
+    </section>
+
+    <!-- How it works -->
+    <section class="stack" style="margin-bottom: var(--space-6);">
+      <h2>How it works</h2>
+      <div class="glass glass-card row">
+        <div class="avatar-sm center" style="background: var(--surface-strong); border-radius: 50%; font-size: 1.1rem;">1</div>
+        <div>
+          <h3 style="font-size: var(--fs-base);">Claim your link</h3>
+          <p>Pick a username — that's your public letter box.</p>
+        </div>
+      </div>
+      <div class="glass glass-card row">
+        <div class="avatar-sm center" style="background: var(--surface-strong); border-radius: 50%; font-size: 1.1rem;">2</div>
+        <div>
+          <h3 style="font-size: var(--fs-base);">Share it anywhere</h3>
+          <p>Post it, message it, put it in your bio. Anyone can open it.</p>
+        </div>
+      </div>
+      <div class="glass glass-card row">
+        <div class="avatar-sm center" style="background: var(--surface-strong); border-radius: 50%; font-size: 1.1rem;">3</div>
+        <div>
+          <h3 style="font-size: var(--fs-base);">Read what comes in</h3>
+          <p>Every letter arrives sealed, unsigned, and only visible to you.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="text-center stack" style="margin-bottom: var(--space-7);">
+      <h2>Your name stays yours.<br />Theirs doesn't have to.</h2>
+      <a href="signup.html" class="btn btn-primary btn-block" data-ripple>Get your Secret Letter link</a>
+    </section>
+
+  </main>
+
+  <script type="module">
+    import { initTheme, initOfflineBanner, hideSplash, attachRipples } from "./script.js";
+
+    initTheme();
+    initOfflineBanner();
+    attachRipples();
+
+    // Hide splash once everything's painted
+    window.addEventListener("load", () => {
+      setTimeout(hideSplash, 500);
+    });
+
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+      const html = document.documentElement;
+      const isLight = html.getAttribute("data-theme") === "light";
+      const next = isLight ? "dark" : "light";
+      html.setAttribute("data-theme", next);
+      localStorage.setItem("sl-theme", next);
+      document.getElementById("theme-toggle").textContent = next === "light" ? "☀️" : "🌙";
+    });
+  </script>
+</body>
+</html>

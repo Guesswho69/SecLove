@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Sign up — Secret Letter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div id="splash"><div class="splash-seal"></div></div>
+  <div id="offline-banner" class="offline-banner">You're offline — some things may not work.</div>
+  <div id="toast-container"></div>
+
+  <nav class="navbar row-between">
+    <a href="index.html" class="logo"><span>Secret</span><span class="dot">Letter</span></a>
+    <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">🌙</button>
+  </nav>
+
+  <main class="container page-enter" style="max-width: 420px;">
+    <div class="stack" style="padding: var(--space-5) 0 var(--space-3);">
+      <span class="eyebrow">Get started</span>
+      <h1>Claim your<br /><span class="gradient-text">letter box</span></h1>
+      <p>Pick a username, set a password, and your link goes live instantly.</p>
+    </div>
+
+    <form id="signup-form" class="glass glass-card stack" novalidate>
+
+      <div class="field">
+        <label for="username">Username</label>
+        <input class="input" type="text" id="username" name="username" placeholder="yourname" maxlength="20" autocomplete="off" required />
+        <div class="row-between">
+          <span class="field-error" id="username-error"></span>
+          <span class="char-counter" id="username-counter">0/20</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="email">Email</label>
+        <input class="input" type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email" required />
+        <span class="field-error" id="email-error"></span>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input class="input" type="password" id="password" name="password" placeholder="At least 8 characters" autocomplete="new-password" required />
+        <span class="field-error" id="password-error"></span>
+      </div>
+
+      <div class="field">
+        <label for="confirm-password">Confirm password</label>
+        <input class="input" type="password" id="confirm-password" name="confirm-password" placeholder="Repeat your password" autocomplete="new-password" required />
+        <span class="field-error" id="confirm-password-error"></span>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-block" id="signup-btn" data-ripple>
+        <span id="signup-btn-text">Create account</span>
+      </button>
+
+      <p class="text-center" style="font-size: var(--fs-sm);">
+        Already have an account? <a href="login.html" style="color: var(--accent-strong); font-weight: 600;">Log in</a>
+      </p>
+    </form>
+  </main>
+
+  <script type="module">
+    import { auth, db } from "./firebase.js";
+    import {
+      createUserWithEmailAndPassword,
+      sendEmailVerification,
+      updateProfile
+    } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
+    import {
+      doc,
+      getDoc,
+      setDoc,
+      runTransaction,
+      serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+    import {
+      initTheme,
+      initOfflineBanner,
+      hideSplash,
+      attachRipples,
+      showToast,
+      setButtonLoading,
+      debounce,
+      isValidUsername,
+      isValidEmail
+    } from "./script.js";
+
+    initTheme();
+    initOfflineBanner();
+    attachRipples();
+    window.addEventListener("load", () => setTimeout(hideSplash, 300));
+
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+      const html = document.documentElement;
+      const next = html.getAttribute("data-theme") === "light" ? "dark" : "light";
+      html.setAttribute("data-theme", next);
+      localStorage.setItem("sl-theme", next);
+    });
+
+    const usernameInput = document.getElementById("username");
+    const usernameError = document.getElementById("username-error");
+    const usernameCounter = document.getElementById("username-counter");
+    const emailInput = document.getElementById("email");
+    const emailError = document.getElementById("email-error");
+    const passwordInput = document.getElementById("password");
+    const passwordError = document.getElementById("password-error");
+    const confirmInput = document.getElementById("confirm-password");
+    const confirmError = document.getElementById("confirm-password-error");
+    const form = document.getElementById("signup-form");
+    const signupBtn = document.getElementById("signup-btn");
+
+    let usernameAvailable = false;
+
+    // Live character counter
+    usernameInput.addEventListener("input", () => {
+      usernameCounter.textContent = `${usernameInput.value.length}/20`;
+      usernameCounter.classList.toggle("limit", usernameInput.value.length >= 20);
+    });
+
+    // Debounced live availability check against /usernames/{lower}
+    const checkUsername = debounce(async (value) => {
+      const clean = value.trim().toLowerCase();
+      if (!isValidUsername(clean)) {
+        usernameError.textContent = "3-20 characters: letters, numbers, underscores only.";
+        usernameAvailable = false;
+        return;
+      }
+      usernameError.textContent = "Checking availability…";
+      try {
+        const snap = await getDoc(doc(db, "usernames", clean));
+        if (snap.exists()) {
+          usernameError.textContent = "That username is taken.";
+          usernameAvailable = false;
+        } else {
+          usernameError.textContent = "";
+          usernameInput.classList.remove("invalid");
+          usernameAvailable = true;
+        }
+      } catch (err) {
+        console.error(err);
+        usernameError.textContent = "Couldn't check availability. Try again.";
+        usernameAvailable = false;
+      }
+    }, 450);
+
+    usernameInput.addEventListener("input", (e) => checkUsername(e.target.value));
+
+    emailInput.addEventListener("blur", () => {
+      emailError.textContent = isValidEmail(emailInput.value) ? "" : "Enter a valid email address.";
+    });
+
+    passwordInput.addEventListener("blur", () => {
+      passwordError.textContent = passwordInput.value.length >= 8 ? "" : "Use at least 8 characters.";
+    });
+
+    confirmInput.addEventListener("blur", () => {
+      confirmError.textContent = confirmInput.value === passwordInput.value ? "" : "Passwords don't match.";
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const username = usernameInput.value.trim();
+      const usernameLower = username.toLowerCase();
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+      const confirmPassword = confirmInput.value;
+
+      // Final validation pass
+      let valid = true;
+      if (!isValidUsername(usernameLower) || !usernameAvailable) {
+        usernameError.textContent = usernameError.textContent || "Choose a valid, available username.";
+        valid = false;
+      }
+      if (!isValidEmail(email)) {
+        emailError.textContent = "Enter a valid email address.";
+        valid = false;
+      }
+      if (password.length < 8) {
+        passwordError.textContent = "Use at least 8 characters.";
+        valid = false;
+      }
+      if (password !== confirmPassword) {
+        confirmError.textContent = "Passwords don't match.";
+        valid = false;
+      }
+      if (!valid) return;
+
+      setButtonLoading(signupBtn, true, "Creating account…");
+
+      try {
+        // 1. Create the auth account
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        const user = cred.user;
+
+        await updateProfile(user, { displayName: username });
+
+        // 2. Atomically reserve the username + create user docs.
+        // The /usernames/{lower} doc is our uniqueness lock: security rules
+        // only allow creating it if it doesn't already exist.
+        await runTransaction(db, async (tx) => {
+          const usernameRef = doc(db, "usernames", usernameLower);
+          const existing = await tx.get(usernameRef);
+          if (existing.exists()) {
+            throw new Error("username-taken");
+          }
+          tx.set(usernameRef, { uid: user.uid });
+
+          tx.set(doc(db, "users", user.uid), {
+            uid: user.uid,
+            username,
+            usernameLower,
+            email,
+            createdAt: serverTimestamp(),
+            lastLogin: serverTimestamp()
+          });
+
+          tx.set(doc(db, "publicProfiles", user.uid), {
+            uid: user.uid,
+            username,
+            usernameLower,
+            bio: "",
+            profilePhoto: "",
+            messageCount: 0,
+            publicLink: `send.html?user=${usernameLower}`,
+            createdAt: serverTimestamp()
+          });
+        });
+
+        // 3. Send verification email (soft requirement, not a hard gate)
+        await sendEmailVerification(user);
+
+        showToast("Account created! Check your email to verify.", "success");
+        window.location.href = "dashboard.html";
+      } catch (err) {
+        console.error(err);
+        let message = "Something went wrong. Please try again.";
+        if (err.code === "auth/email-already-in-use") message = "That email is already registered.";
+        else if (err.code === "auth/weak-password") message = "Choose a stronger password.";
+        else if (err.message === "username-taken") message = "That username was just taken — try another.";
+        showToast(message, "error");
+        setButtonLoading(signupBtn, false, "Create account");
+      }
+    });
+  </script>
+</body>
+</html>

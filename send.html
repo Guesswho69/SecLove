@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Send a letter — Secret Letter</title>
+<meta name="description" content="Send an anonymous letter. No account needed — your name is never attached." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div id="splash"><div class="splash-seal"></div></div>
+  <div id="offline-banner" class="offline-banner">You're offline — some things may not work.</div>
+  <div id="toast-container"></div>
+
+  <nav class="navbar row-between">
+    <a href="index.html" class="logo"><span>Secret</span><span class="dot">Letter</span></a>
+    <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">🌙</button>
+  </nav>
+
+  <main class="container page-enter" style="max-width: 420px;">
+
+    <!-- Loading skeleton -->
+    <section id="loading-state" class="glass glass-card row" style="margin: var(--space-5) 0;">
+      <div class="skeleton skeleton-avatar"></div>
+      <div class="stack" style="gap: 6px; flex: 1;">
+        <div class="skeleton skeleton-line" style="width: 60%;"></div>
+        <div class="skeleton skeleton-line" style="width: 40%;"></div>
+      </div>
+    </section>
+
+    <!-- Not found state -->
+    <section id="not-found-state" class="empty-state" style="display: none;">
+      <span class="icon">✉️</span>
+      <h3>No one here by that name</h3>
+      <p>Double check the link, or explore creating your own.</p>
+      <a href="index.html" class="btn btn-primary" style="margin-top: var(--space-3);">Go home</a>
+    </section>
+
+    <!-- Profile + form -->
+    <section id="send-content" style="display: none;">
+      <div class="glass glass-card row text-center" style="margin: var(--space-5) 0 var(--space-4); flex-direction: column;">
+        <img id="avatar" class="avatar avatar-lg" style="margin: 0 auto var(--space-2);" src="" alt="" />
+        <h2 id="username-display"></h2>
+        <p id="bio-display"></p>
+        <p class="chip" style="margin: var(--space-2) auto 0; width: fit-content;">
+          <span id="message-count">0</span>&nbsp;letters received
+        </p>
+      </div>
+
+      <form id="send-form" class="letter-card stack" novalidate>
+        <span class="seal"></span>
+        <p class="eyebrow">Write an anonymous letter</p>
+        <div class="field">
+          <label for="message" class="visually-hidden">Your message</label>
+          <textarea class="input" id="message" rows="5" maxlength="500" placeholder="Say what's on your mind. No one will know it's you…" required></textarea>
+          <div class="row-between">
+            <span class="field-error" id="message-error"></span>
+            <span class="char-counter" id="message-counter">0/500</span>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="send-btn" data-ripple>
+          <span id="send-btn-text">Seal & send</span>
+        </button>
+        <p class="text-center" style="font-size: var(--fs-xs);">Completely anonymous. We never store who sent this.</p>
+      </form>
+
+      <!-- Sent confirmation -->
+      <div id="sent-confirmation" class="glass glass-card text-center stack" style="display: none; margin-top: var(--space-4);">
+        <span style="font-size: 2rem;">💌</span>
+        <h3>Letter delivered</h3>
+        <p>It's sealed and sent — completely unsigned.</p>
+        <a href="index.html" class="btn btn-secondary" data-ripple>Send your own letters</a>
+      </div>
+    </section>
+
+  </main>
+
+  <script type="module">
+    import { db } from "./firebase.js";
+    import {
+      doc,
+      getDoc,
+      collection,
+      addDoc,
+      runTransaction,
+      serverTimestamp,
+      increment
+    } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+    import {
+      initTheme,
+      initOfflineBanner,
+      hideSplash,
+      attachRipples,
+      showToast,
+      setButtonLoading
+    } from "./script.js";
+
+    initTheme();
+    initOfflineBanner();
+    attachRipples();
+
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+      const html = document.documentElement;
+      const next = html.getAttribute("data-theme") === "light" ? "dark" : "light";
+      html.setAttribute("data-theme", next);
+      localStorage.setItem("sl-theme", next);
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    const usernameParam = (params.get("user") || "").trim().toLowerCase();
+
+    let targetUid = null;
+
+    async function loadProfile() {
+      if (!usernameParam) {
+        showNotFound();
+        return;
+      }
+      try {
+        const usernameSnap = await getDoc(doc(db, "usernames", usernameParam));
+        if (!usernameSnap.exists()) {
+          showNotFound();
+          return;
+        }
+        targetUid = usernameSnap.data().uid;
+        const profileSnap = await getDoc(doc(db, "publicProfiles", targetUid));
+        if (!profileSnap.exists()) {
+          showNotFound();
+          return;
+        }
+        const data = profileSnap.data();
+
+        document.getElementById("avatar").src = data.profilePhoto || fallbackAvatar(data.username);
+        document.getElementById("username-display").textContent = `@${data.username}`;
+        document.getElementById("bio-display").textContent = data.bio || "Send me an anonymous letter";
+        document.getElementById("message-count").textContent = data.messageCount ?? 0;
+
+        document.title = `Send @${data.username} a letter — Secret Letter`;
+
+        document.getElementById("loading-state").style.display = "none";
+        document.getElementById("send-content").style.display = "block";
+      } catch (err) {
+        console.error(err);
+        showNotFound();
+      } finally {
+        hideSplash();
+      }
+    }
+
+    function showNotFound() {
+      document.getElementById("loading-state").style.display = "none";
+      document.getElementById("not-found-state").style.display = "flex";
+      hideSplash();
+    }
+
+    function fallbackAvatar(username) {
+      const initial = (username || "?").charAt(0).toUpperCase();
+      return `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='50' fill='%236C4FF0'/><text x='50' y='62' font-size='42' text-anchor='middle' fill='white' font-family='sans-serif'>${initial}</text></svg>`;
+    }
+
+    loadProfile();
+
+    // Character counter
+    const messageInput = document.getElementById("message");
+    const messageCounter = document.getElementById("message-counter");
+    messageInput.addEventListener("input", () => {
+      messageCounter.textContent = `${messageInput.value.length}/500`;
+      messageCounter.classList.toggle("limit", messageInput.value.length >= 500);
+    });
+
+    // Lightweight client-side rate limit — no backend, so this is a courtesy
+    // guard against accidental double-sends, not real abuse prevention
+    // (server-side field validation in Firestore rules handles the rest).
+    function canSendAgain(uid) {
+      const key = `sl-last-send-${uid}`;
+      const last = Number(localStorage.getItem(key) || 0);
+      return Date.now() - last > 15000; // 15s cooldown
+    }
+    function markSent(uid) {
+      localStorage.setItem(`sl-last-send-${uid}`, String(Date.now()));
+    }
+
+    document.getElementById("send-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const messageError = document.getElementById("message-error");
+      messageError.textContent = "";
+
+      const text = messageInput.value.trim();
+      if (!text) {
+        messageError.textContent = "Write something before sending.";
+        return;
+      }
+      if (text.length > 500) {
+        messageError.textContent = "Keep it under 500 characters.";
+        return;
+      }
+      if (!targetUid) return;
+
+      if (!canSendAgain(targetUid)) {
+        showToast("Give it a moment before sending another.", "error");
+        return;
+      }
+
+      const sendBtn = document.getElementById("send-btn");
+      setButtonLoading(sendBtn, true, "Sending…");
+
+      try {
+        // Write the message — never include any sender identity.
+        await addDoc(collection(db, "users", targetUid, "messages"), {
+          text,
+          timestamp: serverTimestamp(),
+          read: false
+        });
+
+        // Increment the public message counter atomically.
+        await runTransaction(db, async (tx) => {
+          const profileRef = doc(db, "publicProfiles", targetUid);
+          tx.update(profileRef, { messageCount: increment(1) });
+        });
+
+        markSent(targetUid);
+        document.getElementById("send-form").style.display = "none";
+        document.getElementById("sent-confirmation").style.display = "flex";
+      } catch (err) {
+        console.error(err);
+        showToast("Couldn't send your letter. Try again.", "error");
+        setButtonLoading(sendBtn, false, "Seal & send");
+      }
+    });
+  </script>
+</body>
+</html>

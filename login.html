@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Log in — Secret Letter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div id="splash"><div class="splash-seal"></div></div>
+  <div id="offline-banner" class="offline-banner">You're offline — some things may not work.</div>
+  <div id="toast-container"></div>
+
+  <nav class="navbar row-between">
+    <a href="index.html" class="logo"><span>Secret</span><span class="dot">Letter</span></a>
+    <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">🌙</button>
+  </nav>
+
+  <main class="container page-enter" style="max-width: 420px;">
+    <div class="stack" style="padding: var(--space-5) 0 var(--space-3);">
+      <span class="eyebrow">Welcome back</span>
+      <h1>Log in to your<br /><span class="gradient-text">letter box</span></h1>
+    </div>
+
+    <form id="login-form" class="glass glass-card stack" novalidate>
+
+      <div class="field">
+        <label for="email">Email</label>
+        <input class="input" type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email" required />
+        <span class="field-error" id="email-error"></span>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input class="input" type="password" id="password" name="password" placeholder="Your password" autocomplete="current-password" required />
+        <span class="field-error" id="password-error"></span>
+      </div>
+
+      <label class="row" style="cursor: pointer; font-size: var(--fs-sm); color: var(--text-muted);">
+        <input type="checkbox" id="stay-logged-in" checked style="width: 18px; height: 18px; accent-color: var(--accent-strong);" />
+        Stay logged in
+      </label>
+
+      <button type="submit" class="btn btn-primary btn-block" id="login-btn" data-ripple>
+        <span id="login-btn-text">Log in</span>
+      </button>
+
+      <button type="button" id="forgot-password-btn" class="btn btn-ghost" style="margin: 0 auto;">
+        Forgot password?
+      </button>
+
+      <p class="text-center" style="font-size: var(--fs-sm);">
+        New here? <a href="signup.html" style="color: var(--accent-strong); font-weight: 600;">Create an account</a>
+      </p>
+    </form>
+  </main>
+
+  <!-- Forgot password modal -->
+  <div id="reset-modal" class="center" style="position: fixed; inset: 0; z-index: 150; background: rgba(0,0,0,0.5); display: none;">
+    <div class="glass glass-card stack" style="width: 90%; max-width: 380px;">
+      <h3>Reset your password</h3>
+      <p>Enter your email and we'll send you a reset link.</p>
+      <div class="field">
+        <label for="reset-email">Email</label>
+        <input class="input" type="email" id="reset-email" placeholder="you@example.com" />
+      </div>
+      <div class="row">
+        <button type="button" class="btn btn-secondary" id="reset-cancel" style="flex: 1;">Cancel</button>
+        <button type="button" class="btn btn-primary" id="reset-send" style="flex: 1;" data-ripple>Send link</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { auth, setAuthPersistence } from "./firebase.js";
+    import {
+      signInWithEmailAndPassword,
+      sendPasswordResetEmail
+    } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
+    import {
+      initTheme,
+      initOfflineBanner,
+      hideSplash,
+      attachRipples,
+      showToast,
+      setButtonLoading,
+      isValidEmail
+    } from "./script.js";
+
+    initTheme();
+    initOfflineBanner();
+    attachRipples();
+    window.addEventListener("load", () => setTimeout(hideSplash, 300));
+
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+      const html = document.documentElement;
+      const next = html.getAttribute("data-theme") === "light" ? "dark" : "light";
+      html.setAttribute("data-theme", next);
+      localStorage.setItem("sl-theme", next);
+    });
+
+    const form = document.getElementById("login-form");
+    const emailInput = document.getElementById("email");
+    const emailError = document.getElementById("email-error");
+    const passwordInput = document.getElementById("password");
+    const passwordError = document.getElementById("password-error");
+    const stayLoggedIn = document.getElementById("stay-logged-in");
+    const loginBtn = document.getElementById("login-btn");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      emailError.textContent = "";
+      passwordError.textContent = "";
+
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+
+      let valid = true;
+      if (!isValidEmail(email)) {
+        emailError.textContent = "Enter a valid email address.";
+        valid = false;
+      }
+      if (!password) {
+        passwordError.textContent = "Enter your password.";
+        valid = false;
+      }
+      if (!valid) return;
+
+      setButtonLoading(loginBtn, true, "Logging in…");
+
+      try {
+        await setAuthPersistence(stayLoggedIn.checked);
+        await signInWithEmailAndPassword(auth, email, password);
+        showToast("Welcome back!", "success");
+        window.location.href = "dashboard.html";
+      } catch (err) {
+        console.error(err);
+        let message = "Couldn't log in. Please try again.";
+        if (err.code === "auth/invalid-credential" || err.code === "auth/wrong-password" || err.code === "auth/user-not-found") {
+          message = "Incorrect email or password.";
+        } else if (err.code === "auth/too-many-requests") {
+          message = "Too many attempts. Try again later.";
+        }
+        showToast(message, "error");
+        setButtonLoading(loginBtn, false, "Log in");
+      }
+    });
+
+    // Forgot password modal wiring
+    const modal = document.getElementById("reset-modal");
+    const resetEmailInput = document.getElementById("reset-email");
+
+    document.getElementById("forgot-password-btn").addEventListener("click", () => {
+      resetEmailInput.value = emailInput.value.trim();
+      modal.style.display = "flex";
+    });
+
+    document.getElementById("reset-cancel").addEventListener("click", () => {
+      modal.style.display = "none";
+    });
+
+    document.getElementById("reset-send").addEventListener("click", async () => {
+      const resetEmail = resetEmailInput.value.trim();
+      if (!isValidEmail(resetEmail)) {
+        showToast("Enter a valid email address.", "error");
+        return;
+      }
+      try {
+        await sendPasswordResetEmail(auth, resetEmail);
+        showToast("Reset link sent — check your inbox.", "success");
+        modal.style.display = "none";
+      } catch (err) {
+        console.error(err);
+        showToast("Couldn't send reset link. Try again.", "error");
+      }
+    });
+  </script>
+</body>
+</html>

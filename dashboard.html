@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Dashboard — Secret Letter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div id="splash"><div class="splash-seal"></div></div>
+  <div id="offline-banner" class="offline-banner">You're offline — some things may not work.</div>
+  <div id="toast-container"></div>
+
+  <nav class="navbar row-between">
+    <div class="logo"><span>Secret</span><span class="dot">Letter</span></div>
+    <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">🌙</button>
+  </nav>
+
+  <main class="container page-enter has-tabbar">
+
+    <!-- Verify email banner (soft gate) -->
+    <div id="verify-banner" class="glass glass-card row-between" style="display: none; margin-bottom: var(--space-3); border-left: 3px solid var(--seal);">
+      <p style="color: var(--text); font-size: var(--fs-sm);">Verify your email to secure your account.</p>
+      <button id="resend-verify-btn" class="btn btn-ghost" style="padding: 6px 10px; font-size: var(--fs-xs);">Resend</button>
+    </div>
+
+    <!-- Profile summary (skeleton while loading) -->
+    <section id="profile-summary" class="glass glass-card row" style="margin-bottom: var(--space-4);">
+      <div class="skeleton skeleton-avatar"></div>
+      <div class="stack" style="gap: 6px; flex: 1;">
+        <div class="skeleton skeleton-line" style="width: 60%;"></div>
+        <div class="skeleton skeleton-line" style="width: 40%;"></div>
+      </div>
+    </section>
+
+    <!-- Stats -->
+    <section class="row" style="margin-bottom: var(--space-4); gap: var(--space-3);">
+      <div class="glass glass-card text-center" style="flex: 1;">
+        <h2 id="stat-messages" class="gradient-text">—</h2>
+        <p style="font-size: var(--fs-xs);">Letters received</p>
+      </div>
+      <div class="glass glass-card text-center" style="flex: 1;">
+        <p id="stat-since" class="chip online" style="margin: 0 auto; width: fit-content;">—</p>
+        <p style="font-size: var(--fs-xs); margin-top: var(--space-2);">Member since</p>
+      </div>
+    </section>
+
+    <!-- Public link -->
+    <section class="letter-card" style="margin-bottom: var(--space-4);">
+      <span class="seal"></span>
+      <p class="eyebrow" style="margin-bottom: var(--space-2);">Your letter link</p>
+      <div class="row" style="background: var(--surface-strong); border-radius: var(--radius-sm); padding: 10px 14px; overflow: hidden;">
+        <span id="public-link-text" style="flex: 1; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted);">—</span>
+      </div>
+      <div class="row" style="margin-top: var(--space-3);">
+        <button id="copy-link-btn" class="btn btn-secondary" style="flex: 1;" data-ripple>📋 Copy link</button>
+        <button id="share-link-btn" class="btn btn-primary" style="flex: 1;" data-ripple>↗ Share</button>
+      </div>
+    </section>
+
+    <!-- Quick nav -->
+    <section class="stack">
+      <a href="inbox.html" class="glass glass-card row-between" data-ripple>
+        <div class="row"><span style="font-size: 1.3rem;">📬</span><span>Your inbox</span></div>
+        <span id="inbox-badge" class="badge" style="display: none;">0</span>
+      </a>
+      <a href="profile.html" class="glass glass-card row" data-ripple>
+        <span style="font-size: 1.3rem;">🪞</span><span>Edit your profile</span>
+      </a>
+      <a href="settings.html" class="glass glass-card row" data-ripple>
+        <span style="font-size: 1.3rem;">⚙️</span><span>Settings</span>
+      </a>
+    </section>
+
+  </main>
+
+  <nav class="tab-bar">
+    <a href="dashboard.html" class="tab-item active">🏠<span>Home</span></a>
+    <a href="inbox.html" class="tab-item">📬<span>Inbox</span></a>
+    <a href="profile.html" class="tab-item">🪞<span>Profile</span></a>
+    <a href="settings.html" class="tab-item">⚙️<span>Settings</span></a>
+  </nav>
+
+  <script type="module">
+    import { auth, db } from "./firebase.js";
+    import { sendEmailVerification, signOut } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
+    import { doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+    import {
+      requireAuth,
+      initTheme,
+      initOfflineBanner,
+      hideSplash,
+      attachRipples,
+      showToast,
+      formatMonthYear
+    } from "./script.js";
+
+    initTheme();
+    initOfflineBanner();
+    attachRipples();
+
+    requireAuth(async (user) => {
+      try {
+        const [userSnap, publicSnap] = await Promise.all([
+          getDoc(doc(db, "users", user.uid)),
+          getDoc(doc(db, "publicProfiles", user.uid))
+        ]);
+
+        if (!userSnap.exists() || !publicSnap.exists()) {
+          showToast("Couldn't load your profile.", "error");
+          return;
+        }
+
+        const userData = userSnap.data();
+        const publicData = publicSnap.data();
+
+        // Update lastLogin (fire and forget)
+        updateDoc(doc(db, "users", user.uid), { lastLogin: serverTimestamp() }).catch(() => {});
+
+        // Render profile summary
+        document.getElementById("profile-summary").innerHTML = `
+          <img class="avatar" src="${publicData.profilePhoto || fallbackAvatar(publicData.username)}" alt="${publicData.username}" />
+          <div>
+            <h3 style="font-family: var(--font-body);">@${publicData.username}</h3>
+            <p style="font-size: var(--fs-sm);">${publicData.bio ? escapeHtml(publicData.bio) : "No bio yet"}</p>
+          </div>
+        `;
+
+        document.getElementById("stat-messages").textContent = publicData.messageCount ?? 0;
+        document.getElementById("stat-since").textContent = formatMonthYear(userData.createdAt);
+
+        const link = `${window.location.origin}${window.location.pathname.replace("dashboard.html", "")}send.html?user=${publicData.usernameLower}`;
+        document.getElementById("public-link-text").textContent = link;
+
+        document.getElementById("copy-link-btn").addEventListener("click", async () => {
+          await navigator.clipboard.writeText(link);
+          showToast("Link copied!", "success");
+        });
+
+        document.getElementById("share-link-btn").addEventListener("click", async () => {
+          if (navigator.share) {
+            try {
+              await navigator.share({ title: "Send me an anonymous letter", url: link });
+            } catch (_) { /* user cancelled */ }
+          } else {
+            await navigator.clipboard.writeText(link);
+            showToast("Link copied — sharing isn't supported on this browser.", "success");
+          }
+        });
+
+        // Email verification banner
+        if (!user.emailVerified) {
+          document.getElementById("verify-banner").style.display = "flex";
+          document.getElementById("resend-verify-btn").addEventListener("click", async () => {
+            try {
+              await sendEmailVerification(user);
+              showToast("Verification email sent.", "success");
+            } catch (err) {
+              showToast("Couldn't send email — try again shortly.", "error");
+            }
+          });
+        }
+      } catch (err) {
+        console.error(err);
+        showToast("Something went wrong loading your dashboard.", "error");
+      } finally {
+        hideSplash();
+      }
+    });
+
+    function fallbackAvatar(username) {
+      const initial = (username || "?").charAt(0).toUpperCase();
+      return `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='50' fill='%236C4FF0'/><text x='50' y='62' font-size='42' text-anchor='middle' fill='white' font-family='sans-serif'>${initial}</text></svg>`;
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement("div");
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+      const html = document.documentElement;
+      const next = html.getAttribute("data-theme") === "light" ? "dark" : "light";
+      html.setAttribute("data-theme", next);
+      localStorage.setItem("sl-theme", next);
+    });
+  </script>
+</body>
+</html>
