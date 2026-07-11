@@ -74,6 +74,9 @@
       <a href="settings.html" class="glass glass-card row" data-ripple>
         <span style="font-size: 1.3rem;">⚙️</span><span>Settings</span>
       </a>
+      <button id="logout-btn" class="glass glass-card row" style="width: 100%; color: var(--danger);" data-ripple>
+        <span style="font-size: 1.3rem;">🚪</span><span>Log out</span>
+      </button>
     </section>
 
   </main>
@@ -88,7 +91,7 @@
   <script type="module">
     import { auth, db } from "./firebase.js";
     import { sendEmailVerification, signOut } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
-    import { doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+    import { doc, getDoc, updateDoc, serverTimestamp, collection, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
     import {
       requireAuth,
       initTheme,
@@ -96,12 +99,25 @@
       hideSplash,
       attachRipples,
       showToast,
-      formatMonthYear
+      formatMonthYear,
+      requestNotificationPermission,
+      showSystemNotification
     } from "./script.js";
 
     initTheme();
     initOfflineBanner();
     attachRipples();
+
+    document.getElementById("logout-btn").addEventListener("click", async () => {
+      await signOut(auth);
+      window.location.href = "login.html";
+    });
+
+    // Ask for notification permission once the user's on their dashboard —
+    // a natural, low-pressure moment rather than asking on first load of
+    // the whole site. See requestNotificationPermission's docs for the
+    // limitation: this only fires while a tab for the site is open.
+    requestNotificationPermission();
 
     requireAuth(async (user) => {
       try {
@@ -164,6 +180,10 @@
             }
           });
         }
+
+        // Watch for new letters in real time and notify — see
+        // requestNotificationPermission's note on scope/limitations.
+        watchForNewLetters(user.uid);
       } catch (err) {
         console.error(err);
         showToast("Something went wrong loading your dashboard.", "error");
@@ -171,6 +191,31 @@
         hideSplash();
       }
     });
+
+    // Session start marks the cutoff — only notify for letters that arrive
+    // AFTER this point, so opening the dashboard doesn't "notify" you about
+    // your entire existing inbox.
+    const sessionStart = Date.now();
+    let isFirstSnapshot = true;
+
+    function watchForNewLetters(uid) {
+      const q = query(collection(db, "users", uid, "messages"), orderBy("timestamp", "desc"), limit(10));
+      onSnapshot(q, (snap) => {
+        if (isFirstSnapshot) {
+          // Skip the initial batch — these are pre-existing letters, not new ones.
+          isFirstSnapshot = false;
+          return;
+        }
+        snap.docChanges().forEach((change) => {
+          if (change.type !== "added") return;
+          const data = change.doc.data();
+          const arrivedMs = data.timestamp?.toDate ? data.timestamp.toDate().getTime() : Date.now();
+          if (arrivedMs < sessionStart) return; // ignore late-syncing old docs
+          showToast("A new letter just arrived! 💌", "success");
+          showSystemNotification("New letter", "Someone sent you an anonymous letter.");
+        });
+      });
+    }
 
     function fallbackAvatar(username) {
       const initial = (username || "?").charAt(0).toUpperCase();
